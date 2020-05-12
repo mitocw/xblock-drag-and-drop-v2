@@ -1696,7 +1696,8 @@ function DragAndDropBlock(runtime, element, configuration) {
         var url = runtime.handlerUrl(element, 'drop_item');
         var data = {
             val: item_id,
-            zone: zone
+            zone: zone,
+            items_state: state.items
         };
 
         $.post(url, JSON.stringify(data), 'json')
@@ -1805,7 +1806,7 @@ function DragAndDropBlock(runtime, element, configuration) {
         $.ajax({
             type: 'POST',
             url: runtime.handlerUrl(element, "do_attempt"),
-            data: '{}'
+            data: JSON.stringify({items_state: state.items})
         }).done(function(data){
             state.attempts = data.attempts;
             state.grade = data.grade;
