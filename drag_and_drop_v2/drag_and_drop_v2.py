@@ -217,6 +217,12 @@ class DragAndDropBlock(
         """
         return 1
 
+    def is_anonymous_user(self):
+        """
+        Return True if the current user is anonymous, otherwise return False
+        """
+        return self.runtime.user_id is None
+
     def get_score(self):
         """
         Return the problem's current score as raw values.
@@ -313,6 +319,12 @@ class DragAndDropBlock(
 
         return fragment
 
+    def public_view(self, context):
+        """
+        Render student_view for public users as well.
+        """
+        return self.student_view(context)
+
     def student_view_data(self, context=None):
         """
         Get the configuration data for the student_view.
@@ -340,6 +352,11 @@ class DragAndDropBlock(
                     item['expandedImageURL'] = ''
             return items
 
+        # Since we cannot track attempts for anonymous users, we will not keep
+        # track of attempt count and neither will show this. Anonymous users
+        # can attempt the problem as many times as they want.
+        max_attempts = self.max_attempts if not self.is_anonymous_user() else 0
+
         return {
             "block_id": six.text_type(self.scope_ids.usage_id),
             "display_name": self.display_name,
@@ -347,7 +364,7 @@ class DragAndDropBlock(
             "weight": self.weight,
             "mode": self.mode,
             "zones": self.zones,
-            "max_attempts": self.max_attempts,
+            "max_attempts": max_attempts,
             "graded": getattr(self, 'graded', False),
             "weighted_max_score": self.max_score() * self.weight,
             "max_items_per_zone": self.max_items_per_zone,
@@ -506,12 +523,46 @@ class DragAndDropBlock(
         if self.mode == Constants.ASSESSMENT_MODE:
             return self._drop_item_assessment(item_attempt)
         elif self.mode == Constants.STANDARD_MODE:
+            if self.is_anonymous_user():
+                self._migrate_state(item_attempt)
             return self._drop_item_standard(item_attempt)
         else:
             raise JsonHandlerError(
                 500,
                 self.i18n_service.gettext("Unknown DnDv2 mode {mode} - course is misconfigured").format(self.mode)
             )
+
+    def _migrate_state(self, item_attempt):
+        """
+        Get the anonymous user's state from browser and convert it to
+        items state here so that their previous attempts can be verified.
+        """
+        previous_state = {}
+
+        for item_id, item_info in item_attempt.get('items_state', {}).items():
+            is_correct = self._verify_attempt_correctness(
+                item_id, item_info.get('zone')
+            )
+
+            if not item_info.get('submitting_location'):
+                previous_state[item_id] = self._make_state_from_attempt(
+                    {
+                        'val': item_id,
+                        'zone': item_info.get('zone')
+                    }, is_correct
+                )
+
+        self.item_state = previous_state
+
+    def _verify_attempt_correctness(self, item_id, zone_id):
+        """
+        Return True if attempt is correct otherwise False.
+        """
+        is_true = self._is_attempt_correct({
+            'val': int(item_id),
+            'zone': zone_id
+        }, Constants.STANDARD_MODE)
+        return is_true
 
     @XBlock.json_handler
     def do_attempt(self, data, suffix=''):
@@ -523,6 +574,9 @@ class DragAndDropBlock(
              * JsonHandlerError with 409 error code if no more attempts left
         """
         self._validate_do_attempt()
+
+        if self.is_anonymous_user():
+            self._migrate_state(data)
 
         self.attempts += 1
         # pylint: disable=fixme
@@ -632,7 +686,12 @@ class DragAndDropBlock(
         """
         Checks if current student still have more attempts.
         """
-        return self.max_attempts is None or self.max_attempts == 0 or self.attempts < self.max_attempts
+        return (
+            self.max_attempts is None or
+            self.max_attempts == 0 or
+            self.is_anonymous_user() or
+            self.attempts < self.max_attempts
+        )
 
     @property
     def has_submission_deadline_passed(self):
@@ -845,7 +904,8 @@ class DragAndDropBlock(
 
         if current_raw_earned is None or current_raw_earned_is_greater:
             self.raw_earned = current_raw_earned
-            self._publish_grade(Score(self.raw_earned, self.max_score()))
+            if not self.is_anonymous_user():
+                self._publish_grade(Score(self.raw_earned, self.max_score()))
 
         # and no matter what - emit progress event for current user
         self.runtime.publish(self, "progress", {})
@@ -888,12 +948,13 @@ class DragAndDropBlock(
             'is_correct': is_correct,
         })
 
-    def _is_attempt_correct(self, attempt):
+    def _is_attempt_correct(self, attempt, mode_override=None):
         """
         Check if the item was placed correctly.
         """
         correct_zones = self.get_item_zones(attempt['val'])
-        if correct_zones == [] and attempt['zone'] is None and self.mode == Constants.ASSESSMENT_MODE:
+        mode = mode_override or self.mode
+        if correct_zones == [] and attempt['zone'] is None and mode == Constants.ASSESSMENT_MODE:
             return True
         return attempt['zone'] in correct_zones
 

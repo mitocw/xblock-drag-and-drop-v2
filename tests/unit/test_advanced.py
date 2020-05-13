@@ -48,6 +48,7 @@ class BaseDragAndDropAjaxFixture(TestCaseMixin):
         for field in initial_settings:
             setattr(self.block, field, initial_settings[field])
         self.block.data = self.initial_data()
+        self.block.runtime.user_id = mock.Mock()
 
     @staticmethod
     def _make_feedback_message(message=None, message_class=None):
