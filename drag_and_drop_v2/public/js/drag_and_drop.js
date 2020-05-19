@@ -1853,8 +1853,11 @@ function DragAndDropBlock(runtime, element, configuration) {
         return !configuration.has_deadline_passed;
     };
 
-    var canShowAnswer = function() {
-        return configuration.mode === DragAndDropBlock.ASSESSMENT_MODE && !attemptsRemain();
+    var canShowAnswer = function () {
+        return configuration.is_anonymous_user || (
+            configuration.mode === DragAndDropBlock.ASSESSMENT_MODE &&
+            !attemptsRemain()
+        );
     };
 
     var attemptsRemain = function() {

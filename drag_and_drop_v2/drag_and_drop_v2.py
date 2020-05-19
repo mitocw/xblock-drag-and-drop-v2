@@ -359,6 +359,7 @@ class DragAndDropBlock(
 
         return {
             "block_id": six.text_type(self.scope_ids.usage_id),
+            "is_anonymous_user": self.is_anonymous_user(),
             "display_name": self.display_name,
             "type": self.CATEGORY,
             "weight": self.weight,
@@ -641,7 +642,7 @@ class DragAndDropBlock(
                 400,
                 self.i18n_service.gettext("show_answer handler should only be called for assessment mode")
             )
-        if self.attempts_remain:
+        if not self.is_anonymous_user() and self.attempts_remain:
             raise JsonHandlerError(
                 409,
                 self.i18n_service.gettext("There are attempts remaining")
